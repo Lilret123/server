@@ -31,6 +31,9 @@ import lombok.Data;
 import lombok.EqualsAndHashCode;
 import lombok.NonNull;
 import lombok.experimental.Delegate;
+import org.quartzpowered.protocol.data.BlockPosition;
+
+import java.util.UUID;
 
 import static java.nio.charset.StandardCharsets.UTF_8;
 
@@ -88,5 +91,56 @@ public class Buffer extends ByteBuf {
 
     public void writeString(String value) {
         writeByteArray(value.getBytes(UTF_8));
+    }
+
+    public Buffer readRemainingBytes() {
+        return new Buffer(readBytes(readableBytes()));
+    }
+
+    public BlockPosition readBlockPosition() {
+        long position = readLong();
+
+        return new BlockPosition(
+                (int) (position >> 38),
+                (int) ((position >> 26) & 0xfff),
+                (int) ((position << 38) >> 38)
+        );
+    }
+
+    public void writeBlockPosition(BlockPosition position) {
+        writeLong(((position.getX() & 0x3FFFFFF) << 6) |
+                ((position.getY() & 0xFFF) << 26) |
+                (position.getZ() & 0x3FFFFFF));
+    }
+
+    public double readFixedPoint() {
+        return (double) readInt() / 32;
+    }
+
+    public void writeFixedPoint(double value) {
+        writeInt((int) (value * 32));
+    }
+
+    public void writeAngle(float angle) {
+        writeByte((int) (angle * 256f / 360f));
+    }
+
+    public float readAngle() {
+        return readByte() * 360f / 256f;
+    }
+
+    public void writeUuid(UUID uuid) {
+        writeLong(uuid.getMostSignificantBits());
+        writeLong(uuid.getLeastSignificantBits());
+    }
+
+    public UUID readUuid() {
+        long mostSignificantBits = readLong();
+        long leastSignificantBits = readLong();
+
+        return new UUID(
+                mostSignificantBits,
+                leastSignificantBits
+        );
     }
 }

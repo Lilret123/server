@@ -55,17 +55,36 @@ public class PacketCodec extends ByteToMessageCodec<Packet> {
     protected void encode(ChannelHandlerContext ctx, Packet packet, ByteBuf out) throws Exception {
         Session session = sessionManager.get(ctx);
 
-        Protocol protocol = session.getProtocol();
-        PacketRegistry packets = protocol.getClientBoundPackets(session.getState());
-        CodecRegistry codecs = protocol.getClientBoundCodecs(session.getState());
+        ProtocolState state = session.getState();
 
-        int id = packets.getId(packet.getClass());
+        Protocol protocol = session.getProtocol();
+        PacketRegistry packets = protocol.getClientBoundPackets(state);
+        CodecRegistry codecs = protocol.getClientBoundCodecs(state);
+
+        if (packets == null || codecs == null) {
+            logger.error("No client bound packets/codecs registered for {} - {}", protocol, state);
+            return;
+        }
+
+        Class<? extends Packet> type = packet.getClass();
+
+        int id = packets.getId(type);
         Codec codec = codecs.lookup(id);
+
+        if (codec == null) {
+            logger.error("Unregistered client bound codec for {} - {} - {}", protocol, state, type);
+            return;
+        }
 
         Buffer buffer = new Buffer(out);
 
         buffer.writeVarInt(id);
-        codec.encode(buffer, packet);
+
+        try {
+            codec.encode(buffer, packet);
+        } catch (Exception ex) {
+            logger.error(String.format("Exception while encoding packet for %s - %s - %s", protocol, state, codec.getClass()), ex);
+        }
     }
 
     @Override
@@ -97,7 +116,7 @@ public class PacketCodec extends ByteToMessageCodec<Packet> {
         }
 
         if (codec == null) {
-            logger.error("Unregistered codec for " + type);
+            logger.error("Unregistered server bound codec for {} - {} - {}", protocol, state, type);
             buffer.skipBytes(buffer.readableBytes());
             return;
         }
@@ -105,10 +124,14 @@ public class PacketCodec extends ByteToMessageCodec<Packet> {
         Factory<Packet> packetFactory = factoryRegistry.get(type);
         Packet packet = packetFactory.create();
 
-        codec.decode(buffer, packet);
+        try {
+            codec.decode(buffer, packet);
+        } catch (Exception ex) {
+            logger.warn(String.format("Exception while decoding packet for %s - %s - %s", protocol, state, codec.getClass()), ex);
+        }
 
         if (buffer.readableBytes() > 0) {
-            logger.warn("Not all bytes read for {} - {} - {}", protocol, state, codec);
+            logger.warn("Not all bytes read for {} - {} - {}", protocol, state, codec.getClass());
             buffer.skipBytes(buffer.readableBytes());
         }
 

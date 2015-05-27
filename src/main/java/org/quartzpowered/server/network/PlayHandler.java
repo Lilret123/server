@@ -26,5 +26,52 @@
  */
 package org.quartzpowered.server.network;
 
+import com.google.inject.Inject;
+import net.engio.mbassy.listener.Handler;
+import org.quartzpowered.network.protocol.packet.Packet;
+import org.quartzpowered.network.session.Session;
+import org.quartzpowered.protocol.data.ChatPosition;
+import org.quartzpowered.protocol.data.component.TextComponent;
+import org.quartzpowered.protocol.packet.play.client.ChatMessagePacket;
+import org.quartzpowered.protocol.packet.play.server.PlayerChatMessagePacket;
+import org.quartzpowered.protocol.packet.play.shared.HeldItemChangePacket;
+import org.quartzpowered.protocol.packet.play.shared.KeepAlivePacket;
+import org.slf4j.Logger;
+
+import java.util.ArrayList;
+import java.util.List;
+
 public class PlayHandler {
+    @Inject private Logger logger;
+
+    List<Session> sessionList = new ArrayList<>();
+
+    /*@Handler
+    public void onPacket(Packet packet) {
+        logger.info("IN  {}", packet);
+    }*/
+
+    @Handler
+    public void onPlayerChatMessage(PlayerChatMessagePacket packet) {
+        Session session = packet.getSender();
+
+        if(!sessionList.contains(session)) {
+            sessionList.add(session);
+        }
+
+        KeepAlivePacket keepAlivePacket = new KeepAlivePacket();
+        keepAlivePacket.setKeepAliveId(10);
+        session.send(keepAlivePacket);
+
+        String formatChat = session.getProfile().getName() + ": " + packet.getMessage();
+
+        ChatMessagePacket chatMessagePacketOut = new ChatMessagePacket();
+        chatMessagePacketOut.setMessage(new TextComponent(formatChat));
+        chatMessagePacketOut.setPosition(ChatPosition.CHAT);
+
+        for(Session listSession : sessionList){
+            listSession.send(chatMessagePacketOut);
+        }
+        logger.info(formatChat);
+    }
 }
