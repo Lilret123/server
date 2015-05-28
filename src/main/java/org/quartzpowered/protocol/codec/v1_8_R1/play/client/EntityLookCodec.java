@@ -24,23 +24,26 @@
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
  * THE SOFTWARE.
  */
-package org.quartzpowered.engine.observe;
+package org.quartzpowered.protocol.codec.v1_8_R1.play.client;
 
-import com.google.inject.assistedinject.Assisted;
-import org.quartzpowered.network.protocol.packet.Packet;
-import org.quartzpowered.network.session.Session;
-import org.slf4j.Logger;
+import org.quartzpowered.network.buffer.Buffer;
+import org.quartzpowered.network.protocol.codec.Codec;
+import org.quartzpowered.protocol.packet.play.client.EntityLookPacket;
 
-import javax.inject.Inject;
-
-public class SessionObserver implements Observer {
-    @Inject private Logger logger;
-
-    @Inject @Assisted
-    Session session;
+public class EntityLookCodec implements Codec<EntityLookPacket> {
+    @Override
+    public void encode(Buffer buffer, EntityLookPacket packet) {
+        buffer.writeVarInt(packet.getEntityId());
+        buffer.writeAngle(packet.getYaw());
+        buffer.writeAngle(packet.getPitch());
+        buffer.writeBoolean(packet.isOnGround());
+    }
 
     @Override
-    public void observe(Packet packet) {
-        session.send(packet);
+    public void decode(Buffer buffer, EntityLookPacket packet) {
+        packet.setEntityId(buffer.readVarInt());
+        packet.setYaw(buffer.readAngle());
+        packet.setPitch(buffer.readAngle());
+        packet.setOnGround(buffer.readBoolean());
     }
 }

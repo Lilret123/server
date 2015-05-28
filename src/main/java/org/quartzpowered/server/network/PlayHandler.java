@@ -28,12 +28,22 @@ package org.quartzpowered.server.network;
 
 import com.google.inject.Inject;
 import net.engio.mbassy.listener.Handler;
+import org.quartzpowered.engine.math.Vector3;
+import org.quartzpowered.engine.object.GameObject;
+import org.quartzpowered.engine.object.component.Camera;
+import org.quartzpowered.engine.object.component.Player;
+import org.quartzpowered.engine.object.component.Transform;
 import org.quartzpowered.network.protocol.packet.Packet;
 import org.quartzpowered.network.session.Session;
+import org.quartzpowered.network.session.attribute.AttributeKey;
 import org.quartzpowered.protocol.data.ChatPosition;
+import org.quartzpowered.protocol.data.component.PlayerComponent;
 import org.quartzpowered.protocol.data.component.TextComponent;
 import org.quartzpowered.protocol.packet.play.client.ChatMessagePacket;
 import org.quartzpowered.protocol.packet.play.server.PlayerChatMessagePacket;
+import org.quartzpowered.protocol.packet.play.server.PlayerLookPacket;
+import org.quartzpowered.protocol.packet.play.server.PlayerPositionLookPacket;
+import org.quartzpowered.protocol.packet.play.server.PlayerPositionPacket;
 import org.quartzpowered.protocol.packet.play.shared.HeldItemChangePacket;
 import org.quartzpowered.protocol.packet.play.shared.KeepAlivePacket;
 import org.slf4j.Logger;
@@ -42,11 +52,13 @@ import java.util.ArrayList;
 import java.util.List;
 
 public class PlayHandler {
+    public static final AttributeKey<GameObject> PLAYER_OBJECT = AttributeKey.create();
+
     @Inject private Logger logger;
 
     List<Session> sessionList = new ArrayList<>();
 
-    /*@Handler
+    /* @Handler
     public void onPacket(Packet packet) {
         logger.info("IN  {}", packet);
     }*/
@@ -73,5 +85,30 @@ public class PlayHandler {
             listSession.send(chatMessagePacketOut);
         }
         logger.info(formatChat);
+    }
+
+    @Handler
+    public void onPlayerPosition(PlayerPositionPacket packet) {
+        GameObject playerObject = packet.getSender().getAttributes().get(PLAYER_OBJECT);
+        Camera camera = playerObject.getComponent(Camera.class);
+
+        camera.setRemotePosition(packet.getPosition());
+    }
+
+    @Handler
+    public void onPlayerPositionLook(PlayerPositionLookPacket packet) {
+        GameObject playerObject = packet.getSender().getAttributes().get(PLAYER_OBJECT);
+        Camera camera = playerObject.getComponent(Camera.class);
+
+        camera.setRemotePosition(packet.getPosition());
+        camera.setRemoteRotation(packet.getRotation());
+    }
+
+    @Handler
+    public void onPlayerLook(PlayerLookPacket packet) {
+        GameObject playerObject = packet.getSender().getAttributes().get(PLAYER_OBJECT);
+        Camera camera = playerObject.getComponent(Camera.class);
+
+        camera.setRemoteRotation(packet.getRotation());
     }
 }

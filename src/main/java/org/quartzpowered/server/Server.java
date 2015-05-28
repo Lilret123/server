@@ -39,14 +39,15 @@ import org.quartzpowered.engine.object.component.Camera;
 import org.quartzpowered.engine.object.component.Player;
 import org.quartzpowered.network.server.NetworkServer;
 import org.quartzpowered.network.session.Session;
-import org.quartzpowered.protocol.data.ChatPosition;
 import org.quartzpowered.protocol.data.Difficulty;
 import org.quartzpowered.protocol.data.Dimension;
 import org.quartzpowered.protocol.data.Gamemode;
-import org.quartzpowered.protocol.data.component.TextComponent;
+import org.quartzpowered.protocol.data.info.PlayerInfo;
+import org.quartzpowered.protocol.data.info.PlayerInfoAction;
 import org.quartzpowered.protocol.packet.login.client.LoginResponsePacket;
 import org.quartzpowered.protocol.packet.play.client.*;
 import org.quartzpowered.server.event.player.PlayerLoginEvent;
+import org.quartzpowered.server.event.player.PlayerQuitEvent;
 import org.quartzpowered.server.network.HandshakeHandler;
 import org.quartzpowered.server.network.LoginHandler;
 import org.quartzpowered.server.network.PingHandler;
@@ -57,6 +58,7 @@ import javax.inject.Inject;
 import javax.inject.Singleton;
 import java.security.KeyPair;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 
 import static org.quartzpowered.network.protocol.ProtocolState.PLAY;
@@ -121,11 +123,11 @@ public class Server {
             ChunkBulkPacket chunkBulkPacket = new ChunkBulkPacket();
             chunkBulkPacket.setSkylight(true);
 
-            List<ChunkDataPacket> chunkPackets = new ArrayList<>();
+            List<ChunkPacket> chunkPackets = new ArrayList<>();
 
             for (int cx = -1; cx < 6; cx++) {
                 for (int cz = -1; cz < 6; cz++) {
-                    ChunkDataPacket chunkPacket = new ChunkDataPacket();
+                    ChunkPacket chunkPacket = new ChunkPacket();
                     chunkPacket.setX(cx);
                     chunkPacket.setZ(cz);
 
@@ -172,21 +174,38 @@ public class Server {
             chunkBulkPacket.setChunks(chunkPackets);
             session.send(chunkBulkPacket);
 
-            GameObject cameraObject = gameObjectFactory.create();
-            cameraObject.getTransform().setPosition(new Vector3(0, 11, 0));
-            cameraObject.setParent(level.getRoot());
+            PlayerInfo info = new PlayerInfo();
+            info.setProfile(session.getProfile());
+            info.setGamemode(Gamemode.SURVIVAL);
 
-            Camera camera = cameraObject.addComponent(Camera.class);
-
-            camera.addViewer(session.getObserver());
+            PlayerInfoPacket infoPacket = new PlayerInfoPacket();
+            infoPacket.setAction(PlayerInfoAction.ADD);
+            infoPacket.setInfo(Arrays.asList(info));
+            session.send(infoPacket);
 
             GameObject playerObject = gameObjectFactory.create();
+            playerObject.setName(session.getProfile().getName());
+
             playerObject.getTransform().setPosition(new Vector3(10, 11, 10));
             playerObject.setParent(level.getRoot());
 
+            Camera camera = playerObject.addComponent(Camera.class);
+            camera.addViewer(session);
+
             Player player = playerObject.addComponent(Player.class);
             player.setProfile(session.getProfile());
-        });
 
+            session.getAttributes().set(PlayHandler.PLAYER_OBJECT, playerObject);
+        });
+    }
+
+    @Handler
+    public void onPlayerQuit(PlayerQuitEvent event) {
+        Session session = event.getSession();
+
+        GameObject playerObject = session.getAttributes().get(PlayHandler.PLAYER_OBJECT);
+        if (playerObject != null) {
+            playerObject.setParent(null);
+        }
     }
 }

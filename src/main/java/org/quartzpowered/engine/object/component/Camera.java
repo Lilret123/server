@@ -28,7 +28,9 @@ package org.quartzpowered.engine.object.component;
 
 import lombok.Getter;
 import lombok.Setter;
-import org.quartzpowered.engine.object.annotation.MessageHandler;
+import org.quartzpowered.engine.math.Quaternion;
+import org.quartzpowered.engine.math.Vector3;
+import org.quartzpowered.engine.object.message.MessageHandler;
 import org.quartzpowered.engine.object.annotation.Property;
 import org.quartzpowered.engine.object.Component;
 import org.quartzpowered.engine.object.GameObject;
@@ -38,6 +40,7 @@ import org.quartzpowered.network.session.attribute.AttributeKey;
 import org.quartzpowered.network.session.attribute.AttributeRegistry;
 import org.quartzpowered.network.session.attribute.AttributeStorage;
 import org.quartzpowered.protocol.packet.play.client.PlayerTeleportPacket;
+import org.slf4j.Logger;
 
 import javax.inject.Inject;
 import java.util.ArrayList;
@@ -50,9 +53,22 @@ public class Camera extends Component implements Observer {
 
     @Getter @Setter
     @Property
-    private double range = 10;
+    private double range = 16;
 
     private final List<Observer> observers = new ArrayList<>();
+
+    private final Vector3 remotePosition = Vector3.zero();
+    private final Quaternion remoteRotation = Quaternion.identity();
+
+    public void setRemotePosition(Vector3 position) {
+        remotePosition.set(position);
+        gameObject.getTransform().setPosition(position);
+    }
+
+    public void setRemoteRotation(Quaternion rotation) {
+        remoteRotation.set(rotation);
+        gameObject.getTransform().setRotation(rotation);
+    }
 
     public void removeViewer(Observer observer) {
         if (this.observers.remove(observer)) {
@@ -71,35 +87,53 @@ public class Camera extends Component implements Observer {
         this.observers.add(observer);
         attributes.set(CAMERA_ATTRIBUTE, this);
 
+        observer.observe(getTeleportPacket());
+    }
+
+    private PlayerTeleportPacket getTeleportPacket() {
         PlayerTeleportPacket teleportPacket = new PlayerTeleportPacket();
 
         Transform transform = gameObject.getTransform();
         teleportPacket.setPosition(transform.getPosition());
         teleportPacket.setRotation(transform.getRotation());
-
-        observer.observe(teleportPacket);
+        return teleportPacket;
     }
 
     @MessageHandler
     public void update() {
+        Transform transform = gameObject.getTransform();
+        if(!transform.getPosition().equals(remotePosition) ||
+                !transform.getRotation().equals(remoteRotation)) {
+
+            // TODO should only be observed by observer controlling the camera
+            observe(getTeleportPacket());
+            setRemotePosition(remotePosition);
+            setRemoteRotation(remoteRotation);
+        }
+
         GameObject root = gameObject.getRoot();
         updateObject(root);
     }
 
-    private void updateObject(GameObject object) {
-        double distance = object.getTransform().distanceSquared(object.getTransform());
-
-        boolean isObserved = object.hasObserver(this);
-
-        if (!isObserved && distance <= range * range) {
-            object.startObserving(this);
-        } else if (isObserved && distance >= range * range) {
-            object.stopObserving(this);
+    private void updateObject(GameObject otherObject) {
+        // TODO change this to mask system
+        if (otherObject == gameObject) {
+            return;
         }
 
-        for (GameObject child : object.getChildren()) {
-            updateObject(child);
+        double distanceSquared = gameObject.getTransform().distanceSquared(otherObject.getTransform());
+
+        boolean isObserved = otherObject.hasObserver(this);
+
+        final double rangeSquared = range * range;
+
+        if (!isObserved && distanceSquared <= rangeSquared) {
+            otherObject.startObserving(this);
+        } else if (isObserved && distanceSquared >= rangeSquared) {
+            otherObject.stopObserving(this);
         }
+
+        otherObject.getChildren().forEach(this::updateObject);
     }
 
     @Override

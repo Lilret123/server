@@ -26,11 +26,16 @@
  */
 package org.quartzpowered.engine.object;
 
+import lombok.Getter;
+import lombok.Setter;
+import lombok.ToString;
 import org.quartzpowered.common.factory.FactoryRegistry;
 import org.quartzpowered.common.reflector.Reflector;
-import org.quartzpowered.common.reflector.ReflectorRegistry;
-import org.quartzpowered.engine.object.annotation.MessageHandler;
+import org.quartzpowered.engine.object.message.MessageHandler;
+import org.quartzpowered.engine.object.annotation.Property;
 import org.quartzpowered.engine.object.component.Transform;
+import org.quartzpowered.engine.object.message.MessageHandlerCache;
+import org.quartzpowered.engine.object.message.MessageHandlerCacheRegistry;
 import org.quartzpowered.engine.observe.Observable;
 import org.quartzpowered.engine.observe.Observer;
 import org.quartzpowered.network.protocol.packet.Packet;
@@ -39,23 +44,32 @@ import org.slf4j.Logger;
 import javax.inject.Inject;
 import java.lang.reflect.Method;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.List;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
 
-public class GameObject implements Observable, Observer {
+@ToString(of = "name")
+public final class GameObject implements Observable, Observer {
     @Inject private Logger logger;
     @Inject private FactoryRegistry factoryRegistry;
-    @Inject private ReflectorRegistry reflectorRegistry;
+    @Inject private MessageHandlerCacheRegistry messageHandlerCacheRegistry;
 
-    private final List<Component> components = new ArrayList<>();
-    private final List<Observer> observers = new ArrayList<>();
+    @Property
+    @Getter @Setter
+    private String name;
+
+    private final List<Component> components = new CopyOnWriteArrayList<>();
+    private final List<Observer> observers = new CopyOnWriteArrayList<>();
 
     @Inject
     private GameObject(FactoryRegistry factoryRegistry) {
         this.factoryRegistry = factoryRegistry;
+    }
 
+    protected void init() {
         addComponent(Transform.class);
     }
 
@@ -72,13 +86,21 @@ public class GameObject implements Observable, Observer {
     }
 
     public void removeComponent(Component component) {
-        if (this.components.remove(component)) {
-            this.observers.forEach(observer -> sendMessageToComponent(component, "stopObserving", observer));
+        if (components.remove(component)) {
+            observers.forEach(observer -> sendMessageToComponent(component, "stopObserving", observer));
         }
     }
 
+    public void clearComponents() {
+        components.forEach(this::removeComponent);
+    }
+
+    public void clearObservers() {
+        observers.forEach(this::stopObserving);
+    }
+
     public <T extends Component> T getComponent(Class<T> type) {
-        for (Component component : this.components) {
+        for (Component component : components) {
             if (type.isInstance(component)) {
                 return type.cast(component);
             }
@@ -156,23 +178,10 @@ public class GameObject implements Observable, Observer {
     }
 
     private void sendMessageToComponent(Component component, String name, Object... args) {
-        Class<? extends Component> componentType = component.getClass();
+        MessageHandlerCache<Component> listenerCache = messageHandlerCacheRegistry.get(component.getClass());
 
-        Method[] methods = componentType.getMethods();
-        for (Method method : methods) {
-
-            if (method.getName().equals(name) &&
-                    method.getAnnotation(MessageHandler.class) != null) {
-
-                Class<?>[] parameters = method.getParameterTypes();
-                if (matchParameters(parameters, args)) {
-                    Reflector<Component> reflector = reflectorRegistry.get(componentType);
-                    reflector.invoke(component, name, args);
-                    break;
-                } else {
-                    logger.warn("@MessageHandler found with invalid signature {} in {}", method, componentType);
-                }
-            }
+        if (listenerCache.hasListener(name)) {
+            listenerCache.sendMessage(component, name, args);
         }
     }
 
@@ -215,7 +224,7 @@ public class GameObject implements Observable, Observer {
     }
 
     private <T extends Component> void getComponents(Class<T> type, Collection<T> result) {
-        for (Component component : this.components) {
+        for (Component component : components) {
             if (type.isInstance(component)) {
                 result.add(type.cast(component));
             }
@@ -297,14 +306,15 @@ public class GameObject implements Observable, Observer {
 
     public void setParent(GameObject parent) {
         Transform transform = getTransform();
-        Transform parentTransform = parent.getTransform();
-
-        if (transform == null || parentTransform == null) {
+        if (transform == null) {
             throw new NullPointerException();
         }
 
+        Transform parentTransform = parent == null ? null :  parent.getTransform();
+
         transform.setParent(parentTransform);
     }
+
 
     public static GameObject none() {
         return null;
